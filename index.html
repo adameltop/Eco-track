@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EcoTrack – track stock, cut waste, save money</title>
+<meta name="description" content="EcoTrack helps small businesses track stock and waste, find where waste comes from and order less. Supports UN Goal 12.">
+<style>
+:root{--bg:#EEF4F0;--panel:#fff;--ink:#12211B;--mute:#5B6B63;--line:#D5E0DA;--green:#0F5B3F;--waste:#E0891B;--wastebg:#FDF1DD;--good:#1E8E5A}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,Segoe UI,sans-serif}
+h1,h2{margin:0 0 12px}
+.wrap{max-width:1040px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+.logo{font:800 26px system-ui;color:var(--green)}.logo span{color:var(--waste)}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);padding:8px 14px}
+button.primary{background:var(--green);color:#fff;border-color:var(--green);font-weight:700}
+input,select{font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;width:100%;background:#fff}
+:focus-visible{outline:3px solid var(--waste);outline-offset:2px}
+.hero{background:var(--green);color:#fff;border-radius:16px;padding:26px;margin-bottom:16px}
+.hero .num{font:800 clamp(44px,9vw,76px)/1 system-ui}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kpi b{display:block;font:800 24px system-ui}.kpi small,.mute{color:var(--mute)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.full{grid-column:1/-1}
+label{display:grid;gap:3px;font-size:13px;color:var(--mute)}
+.bar{display:grid;grid-template-columns:110px 1fr 44px;gap:8px;align-items:center;margin:8px 0;font-size:14px}
+.track{height:14px;background:var(--bg);border-radius:7px;overflow:hidden}
+.fill{height:100%;background:var(--good)}.fill.high{background:var(--waste)}
+.insight{background:var(--wastebg);border-left:5px solid var(--waste);padding:10px 12px;border-radius:8px;margin:8px 0}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+#auth{max-width:380px;margin:60px auto}#auth form{grid-template-columns:1fr}
+.err{color:#B3261E;font-size:14px;min-height:20px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Eco<span>Track</span></div>
+    <div id="userbar" hidden><span class="mute" id="who"></span> <button id="logout">Log out</button></div>
+  </header>
+
+  <section id="auth" class="panel">
+    <h1>Log in to EcoTrack</h1>
+    <form id="authForm">
+      <label>Email<input id="email" type="email" required autocomplete="email"></label>
+      <label>Password (6+ characters)<input id="pass" type="password" minlength="6" required autocomplete="current-password"></label>
+      <button class="primary" id="loginBtn" type="submit">Log in</button>
+      <button type="button" id="signupBtn">Create account</button>
+      <div class="err" id="authErr" role="alert"></div>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <section class="hero"><div class="num" id="heroNum">0%</div><div id="heroTxt"></div></section>
+    <section class="kpis">
+      <div class="kpi"><b id="kSpent">$0</b><small>Total spent</small></div>
+      <div class="kpi"><b id="kLost">$0</b><small>Lost to waste</small></div>
+      <div class="kpi"><b id="kItems">0</b><small>Items tracked</small></div>
+      <div class="kpi"><b id="kWorst">–</b><small>Biggest waste source</small></div>
+    </section>
+    <div class="grid">
+      <section class="panel">
+        <h2>Add a stock entry</h2>
+        <form id="form">
+          <label class="full">Item name<input id="name" required maxlength="40"></label>
+          <label>Category<select id="cat"><option>Food</option><option>Packaging</option><option>Clothing</option><option>Materials</option><option>Other</option></select></label>
+          <label>Date<input id="date" type="date" required></label>
+          <label>Quantity bought<input id="bought" type="number" min="0.01" step="any" required></label>
+          <label>Quantity wasted<input id="wasted" type="number" min="0" step="any" required></label>
+          <label class="full">Cost per unit<input id="cost" type="number" min="0" step="any" required></label>
+          <button class="primary full" type="submit">Save entry</button>
+          <div class="err full" id="err" role="alert"></div>
+        </form>
+      </section>
+      <section class="panel"><h2>Waste rate by item</h2><div id="bars"></div></section>
+    </div>
+    <section class="panel" style="margin-bottom:16px"><h2>What to change</h2><div id="insights"></div></section>
+    <section class="panel"><h2>Entries</h2><div class="scroll" id="table"></div></section>
+  </main>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+
+import { firebaseConfig } from "./firebase-config.js";
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app);
+const $ = id => document.getElementById(id);
+const money = n => "$" + n.toLocaleString(undefined, {maximumFractionDigits: 2});
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let entries = [], unsub = null, uid = null;
+
+const authErr = e => { $("authErr").textContent = e.code === "auth/invalid-credential" ? "Wrong email or password." : e.code === "auth/email-already-in-use" ? "That email already has an account. Log in instead." : e.message; };
+$("authForm").addEventListener("submit", async e => { e.preventDefault(); $("authErr").textContent = "";
+  try { await signInWithEmailAndPassword(auth, $("email").value, $("pass").value); } catch (x) { authErr(x); } });
+$("signupBtn").addEventListener("click", async () => { $("authErr").textContent = "";
+  if (!$("authForm").reportValidity()) return;
+  try { await createUserWithEmailAndPassword(auth, $("email").value, $("pass").value); } catch (x) { authErr(x); } });
+$("logout").addEventListener("click", () => signOut(auth));
+
+onAuthStateChanged(auth, user => {
+  if (unsub) { unsub(); unsub = null; }
+  $("auth").hidden = !!user; $("app").hidden = !user; $("userbar").hidden = !user;
+  if (!user) { entries = []; uid = null; return; }
+  uid = user.uid; $("who").textContent = user.email;
+  unsub = onSnapshot(query(collection(db, "users", uid, "entries"), orderBy("date", "desc")),
+    snap => { entries = snap.docs.map(d => ({id: d.id, ...d.data()})); render(); },
+    err => { $("err").textContent = "Could not load data: " + err.message; });
+});
+
+$("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const bought = parseFloat($("bought").value), wasted = parseFloat($("wasted").value);
+  if (wasted > bought) { $("err").textContent = "Wasted quantity cannot be higher than the quantity bought."; return; }
+  $("err").textContent = "";
+  try {
+    await addDoc(collection(db, "users", uid, "entries"), {
+      name: $("name").value.trim(), cat: $("cat").value, date: $("date").value,
+      bought, wasted, cost: parseFloat($("cost").value)
+    });
+    $("name").value = $("bought").value = $("wasted").value = "";
+  } catch (x) { $("err").textContent = "Could not save: " + x.message; }
+});
+$("table").addEventListener("click", async e => {
+  const id = e.target.dataset && e.target.dataset.id;
+  if (id) await deleteDoc(doc(db, "users", uid, "entries", id));
+});
+$("date").value = new Date().toISOString().slice(0, 10);
+
+function render() {
+  let spent = 0, lost = 0, bought = 0, wasted = 0; const g = {};
+  entries.forEach(e => {
+    spent += e.bought * e.cost; lost += e.wasted * e.cost; bought += e.bought; wasted += e.wasted;
+    const k = e.name.toLowerCase(), o = g[k] || (g[k] = {name: e.name, bought: 0, wasted: 0, lost: 0, n: 0});
+    o.bought += e.bought; o.wasted += e.wasted; o.lost += e.wasted * e.cost; o.n++;
+  });
+  const items = Object.values(g).map(o => ({...o, rate: o.wasted / o.bought * 100}));
+  const byLoss = [...items].sort((a, b) => b.lost - a.lost);
+  $("heroNum").textContent = Math.round(bought ? wasted / bought * 100 : 0) + "%";
+  $("heroTxt").textContent = entries.length ? `of what you bought was wasted, worth ${money(lost)}.` : "Add your first entry to see your waste rate.";
+  $("kSpent").textContent = money(spent); $("kLost").textContent = money(lost);
+  $("kItems").textContent = items.length; $("kWorst").textContent = byLoss.length ? byLoss[0].name : "–";
+  $("bars").innerHTML = items.length ? [...items].sort((a, b) => b.rate - a.rate).map(o =>
+    `<div class="bar"><span>${esc(o.name)}</span><div class="track"><div class="fill ${o.rate >= 20 ? "high" : ""}" style="width:${Math.min(100, o.rate)}%"></div></div><span>${Math.round(o.rate)}%</span></div>`).join("")
+    : '<p class="mute">No data yet.</p>';
+  const tips = items.filter(o => o.n >= 2 && o.rate >= 15).map(o => {
+    const cut = Math.round(o.rate / 2), avg = o.bought / o.n;
+    return `<div class="insight"><b>${esc(o.name)}</b>: ${Math.round(o.rate)}% wasted across ${o.n} entries (${money(o.lost)} lost). Try ordering about ${cut}% less, around ${(avg * (1 - cut / 100)).toFixed(1)} per order instead of ${avg.toFixed(1)}.</div>`; });
+  $("insights").innerHTML = tips.join("") || '<p class="mute">Suggestions appear once an item has 2+ entries with 15%+ waste.</p>';
+  $("table").innerHTML = entries.length ? "<table><thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Bought</th><th>Wasted</th><th>Lost</th><th></th></tr></thead><tbody>" +
+    entries.map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.name)}</td><td>${esc(e.cat)}</td><td>${e.bought}</td><td>${e.wasted}</td><td>${money(e.wasted * e.cost)}</td><td><button data-id="${e.id}" aria-label="Delete ${esc(e.name)} entry">Delete</button></td></tr>`).join("") + "</tbody></table>"
+    : '<p class="mute">No entries yet.</p>';
+}
+</script>
+</body>
+</html>

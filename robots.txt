@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://adameltop.github.io/ecotrack/sitemap.xml
